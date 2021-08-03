@@ -1,7 +1,12 @@
 [package]
-name = "seq-tex"
+name = "seq2xypic"
 version = "0.1.0"
 edition = "2018"
+license = "MIT"
+description = "Turn a text sequence diagram into a LaTeX xypic diagram."
+homepage = "https://github.com/martinthomson/seq2xypic"
+repository = "https://github.com/martinthomson/seq2xypic"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

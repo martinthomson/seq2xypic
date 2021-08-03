@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "seq-tex"
+name = "seq2xypic"
 version = "0.1.0"

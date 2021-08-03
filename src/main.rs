@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::convert::TryFrom;
 use std::io;
 
 #[derive(Default)]
@@ -87,6 +88,7 @@ impl Item {
                 text,
                 line,
             } => {
+                const LINE_HEIGHT: f64 = 1.5;
                 let start = from.as_ref().map(|x| nodes.index_of(x)).unwrap_or(0);
                 let end = to
                     .as_ref()
@@ -104,19 +106,37 @@ impl Item {
                     }
                     Ordering::Less => {
                         let middle = (end - start) / 2;
+                        let lines = f64::from(
+                            u32::try_from(text.trim().matches('\n').count() + 1).unwrap(),
+                        );
                         print!(
-                            r#"    {} \save [].[{}] *+[F.:<3pt>]\frm{{}} \restore"#,
+                            r#"    {} *+<{}em>{{}} \save [].[{}] *[F.:<3pt>]\frm{{}} \restore"#,
                             "&".repeat(start),
+                            LINE_HEIGHT * lines,
                             "r".repeat(end - start),
                         );
                         for i in start..middle {
+                            if i > start {
+                                print!(r#"  *+<{}em>{{}}"#, LINE_HEIGHT * lines);
+                            }
                             print!(r#" \ar@{{-}}[{}] &"#, "u".repeat(verticals[i]));
                         }
-                        print!(r#" \txt{{{}}}"#, Self::txt(text));
+                        print!(
+                            r#" *+<{}em>\txt{{{}}}"#,
+                            LINE_HEIGHT * lines,
+                            Self::txt(text)
+                        );
                         for i in middle..=end {
-                            print!(r#" \ar@{{-}}[{}] &"#, "u".repeat(verticals[i]));
+                            if i > middle {
+                                print!(r#"  *+<{}em>{{}}"#, LINE_HEIGHT * lines);
+                            }
+                            print!(r#" \ar@{{-}}[{}]"#, "u".repeat(verticals[i]));
+                            if i < end {
+                                print!(" &");
+                            } else {
+                                println!(r#" {} \\"#, "&".repeat(nodes.len() - end - 1));
+                            }
                         }
-                        println!(r#"{} \\"#, "&".repeat(nodes.len() - end - 1));
                     }
                     Ordering::Greater => {
                         panic!("unsupported note ordering on line {}", line);
