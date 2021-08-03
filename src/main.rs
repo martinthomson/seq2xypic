@@ -23,19 +23,14 @@ impl Nodes {
             .find_map(|(i, v)| if v == n { Some(i) } else { None })
             .unwrap()
     }
-    pub fn print(&self, height: usize) {
-        fn p(n: &str, height: usize, delim: &str) {
-            println!(
-                r#"  *+[F]{{\txt{{{}}}}} \ar@{{-}}[{}] {}"#,
-                n,
-                "d".repeat(height + 1),
-                delim,
-            );
+    pub fn print(&self) {
+        fn p(n: &str, delim: &str) {
+            println!(r#"  *+[F]{{\txt{{{}}}}} {}"#, n, delim,);
         }
         for n in &self.all[..self.len() - 1] {
-            p(n, height, "&");
+            p(n, "&");
         }
-        p(&self.all[self.all.len() - 1], height, r#"\\"#);
+        p(&self.all[self.all.len() - 1], r#"\\"#);
     }
 }
 
@@ -59,9 +54,15 @@ enum Item {
 
 impl Item {
     pub fn txt(t: &str) -> String {
-        t.trim().replace('\\', "\\backslash").replace('_', "\\_").replace('\n', " \\\\\n")
+        t.trim()
+            .replace('\\', "\\backslash")
+            .replace('_', "\\_")
+            .replace('\n', " \\\\\n")
     }
-    pub fn print(&self, nodes: &Nodes) {
+    pub fn print(&self, nodes: &Nodes, verticals: &mut Vec<usize>) {
+        for i in &mut verticals[..] {
+            *i += 1;
+        }
         match &self {
             Self::Arrow { from, to, text } => {
                 let start = nodes.index_of(from);
@@ -94,26 +95,35 @@ impl Item {
                 match start.cmp(&end) {
                     Ordering::Equal => {
                         println!(
-                            r#"    {} *+[F.:<3pt>]{{\txt{{{}}}}} {} \\"#,
+                            r#"    {} *+[F.:<3pt>]{{\txt{{{}}}}} \ar@{{-}}[{}] {} \\"#,
                             "&".repeat(start),
                             Self::txt(text),
+                            "u".repeat(verticals[start]),
                             "&".repeat(nodes.len() - end),
                         );
                     }
                     Ordering::Less => {
                         let middle = (end - start) / 2;
-                        println!(
-                            r#"    {} \save [].[{}] *+[F.:<3pt>]\frm{{}} \restore {} \txt{{{}}} {} \\"#,
+                        print!(
+                            r#"    {} \save [].[{}] *+[F.:<3pt>]\frm{{}} \restore"#,
                             "&".repeat(start),
                             "r".repeat(end - start),
-                            "&".repeat(middle - start),
-                            Self::txt(text),
-                            "&".repeat(nodes.len() - middle - 1),
                         );
+                        for i in start..middle {
+                            print!(r#" \ar@{{-}}[{}] &"#, "u".repeat(verticals[i]));
+                        }
+                        print!(r#" \txt{{{}}}"#, Self::txt(text));
+                        for i in middle..=end {
+                            print!(r#" \ar@{{-}}[{}] &"#, "u".repeat(verticals[i]));
+                        }
+                        println!(r#"{} \\"#, "&".repeat(nodes.len() - end - 1));
                     }
                     Ordering::Greater => {
                         panic!("unsupported note ordering on line {}", line);
                     }
+                }
+                for i in start..=end {
+                    verticals[i] = 0;
                 }
             }
             Self::Group { text, lines } => {
@@ -121,9 +131,10 @@ impl Item {
                     println!("% empty group: {}", text);
                 } else {
                     println!(
-                        r#"    \save [].[{}] {{\txt{{{}}}}} \restore"#,
+                        r#"    \save [].[{}] {{\txt{{{}}}}} \restore \ar@{{-}}[{}]"#,
                         "r".repeat(nodes.len() - 1),
                         Self::txt(text),
+                        "u".repeat(verticals[0]),
                     );
                     println!(
                         r#"      \save [].[{}{}] *+[F-,]\frm{{}} \restore {} \\"#,
@@ -132,6 +143,7 @@ impl Item {
                         "&".repeat(nodes.len() - 1),
                     );
                 }
+                verticals[0] = 0;
             }
         }
     }
@@ -192,20 +204,28 @@ impl Items {
         }
     }
 
-    pub fn len(&self) -> usize {
-        self.all.len()
-    }
-
     pub fn print(&self) {
-        println!("{}", self.title);
+        println!(r#"\begin{{figure}}"#);
+        println!(r#"\small"#);
         println!(r#"\[ \xymatrix {} {{"#, self.options);
 
-        self.nodes.print(self.len());
+        let mut verticals = vec![0; self.nodes.len()];
+
+        self.nodes.print();
         for item in &self.all {
-            item.print(&self.nodes);
+            item.print(&self.nodes, &mut verticals);
         }
-        println!(r#"  {} \\"#, "&".repeat(self.nodes.len() - 1));
+
+        for i in &verticals[..verticals.len() - 1] {
+            print!(r#" \ar@{{-}}[{}] &"#, "u".repeat(*i + 1));
+        }
+        println!(
+            r#" \ar@{{-}}[{}] \\"#,
+            "u".repeat(*verticals.last().unwrap() + 1)
+        );
         println!(r#"}} \]"#);
+        println!(r#"\caption{{{}}}"#, Item::txt(&self.title));
+        println!(r#"\end{{figure}}"#);
     }
 }
 
