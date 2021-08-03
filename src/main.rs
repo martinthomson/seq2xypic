@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::convert::TryFrom;
+use std::fs::File;
 use std::io;
 
 #[derive(Default)]
@@ -247,65 +248,72 @@ impl Items {
         println!(r#"\caption{{{}}}"#, Item::txt(&self.title));
         println!(r#"\end{{figure}}"#);
     }
+
+    pub fn parse(&mut self, r: &mut impl io::BufRead) {
+        let mut line = 1;
+
+        loop {
+            let mut t = String::new();
+            if r.read_line(&mut t).unwrap() == 0 {
+                break;
+            }
+            let s = t.trim();
+            if s.starts_with('#') {
+                continue;
+            }
+            if s.is_empty() {
+                self.add_text(s);
+                continue;
+            }
+            if let Some((label, text)) = s.split_once(':') {
+                let label = label.trim();
+                let text = text.trim().to_owned();
+                if label == "xypic" {
+                    self.options = text;
+                } else if label == "title" {
+                    self.title = text;
+                } else if label == "note" {
+                    self.note(None, None, text, line);
+                } else if let Some(x) = label.strip_prefix("note ") {
+                    if let Some((a, b)) = x.split_once(',') {
+                        self.note(Some(a), Some(b), text, line);
+                    } else {
+                        self.note(Some(x), Some(x), text, line);
+                    }
+                } else if let Some((a, b)) = label.split_once("->") {
+                    self.arrow(a, b, text);
+                } else if let Some((a, b)) = label.split_once("<-") {
+                    self.arrow(b, a, text);
+                } else if label == "group" {
+                    self.group(text);
+                } else {
+                    println!("% skipped {}: {}", label, text);
+                }
+            } else if s == "end" {
+                self.end_group();
+            } else {
+                self.add_text(s);
+            }
+
+            line += 1;
+        }
+    }
 }
 
 fn main() {
     let mut items = Items::default();
-    let mut line = 1;
-
-    loop {
-        let mut t = String::new();
-        if io::stdin().read_line(&mut t).unwrap() == 0 {
-            break;
-        }
-        let s = t.trim();
-        if s.starts_with('#') {
-            continue;
-        }
-        if s.is_empty() {
-            items.add_text(s);
-            continue;
-        }
-        if let Some((label, text)) = s.split_once(':') {
-            let label = label.trim();
-            let text = text.trim().to_owned();
-
-            if label == "xypic" {
-                items.options = text;
-            } else if label == "title" {
-                items.title = text;
-            } else if label == "note" {
-                items.note(None, None, text, line);
-            } else if let Some(x) = label.strip_prefix("note ") {
-                if let Some((a, b)) = x.split_once(',') {
-                    items.note(Some(a), Some(b), text, line);
-                } else {
-                    items.note(Some(x), Some(x), text, line);
-                }
-            } else if let Some((a, b)) = label.split_once("->") {
-                items.arrow(a, b, text);
-            } else if let Some((a, b)) = label.split_once("<-") {
-                items.arrow(b, a, text);
-            } else if label == "group" {
-                items.group(text);
-            } else {
-                println!("% skip {}: {}", label, text);
-            }
-        } else if s == "end" {
-            items.end_group();
+    let mut file = false;
+    for arg in std::env::args().skip(1) {
+        if let Ok(f) = File::open(&arg) {
+            file = true;
+            items.parse(&mut io::BufReader::new(f));
+            items.print();
         } else {
-            items.add_text(s);
+            panic!("invalid file: {}", arg);
         }
-
-        line += 1;
     }
-
-    // \[ \xymatrix @C+10em {
-    //     *+[F]{\txt{Client}} \ar@{-}[ddd] & *+[F]{\txt{Server}} \ar@{-}[ddd] \\
-    //     \ar[r]^{\txt{hi there}} & \\
-    //     & \ar[l]_{\txt{hi yourself}} \\
-    //     & \\
-    //   } \]
-
-    items.print();
+    if !file {
+        items.parse(&mut io::BufReader::new(io::stdin()));
+        items.print();
+    }
 }
