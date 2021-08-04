@@ -1,7 +1,10 @@
+#![deny(clippy::pedantic)]
+
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io;
+use std::ops::RangeInclusive;
 use std::path::PathBuf;
 
 #[derive(Default)]
@@ -62,27 +65,116 @@ impl Item {
             .replace('_', "\\_")
             .replace('\n', " \\\\\n")
     }
+
+    fn print_arrow(nodes: &Nodes, from: &str, to: &str, text: &str) {
+        let start = nodes.index_of(from);
+        let end = nodes.index_of(to);
+        let (l, c, d) = if start > end {
+            (start - end, "l", '_')
+        } else {
+            (end - start, "r", '^')
+        };
+        println!(
+            r#"    {} \ar[{}]{}{{\txt{{{}}}}} {} \\"#,
+            "&".repeat(start),
+            c.repeat(l),
+            d,
+            Self::txt(text),
+            "&".repeat(nodes.len() - start - 1)
+        );
+    }
+
+    #[allow(clippy::needless_range_loop)] // More readable like this.
+    fn print_note(
+        nodes: &Nodes,
+        from: &Option<String>,
+        to: &Option<String>,
+        text: &str,
+        line: usize,
+        verticals: &[usize],
+    ) -> RangeInclusive<usize> {
+        const LINE_HEIGHT: f64 = 1.5;
+        let start = from.as_ref().map_or(0, |x| nodes.index_of(&x));
+        let end = to
+            .as_ref()
+            .map_or_else(|| nodes.len() - 1, |x| nodes.index_of(&x));
+        match start.cmp(&end) {
+            Ordering::Equal => {
+                println!(
+                    r#"    {} *+[F.:<3pt>]{{\txt{{{}}}}} \ar@{{-}}[{}] {} \\"#,
+                    "&".repeat(start),
+                    Self::txt(text),
+                    "u".repeat(verticals[start]),
+                    "&".repeat(nodes.len() - end),
+                );
+            }
+            Ordering::Less => {
+                let middle = (end - start) / 2;
+                let lines =
+                    f64::from(u32::try_from(text.trim().matches('\n').count() + 1).unwrap());
+                print!(
+                    r#"    {} *+<{}em>{{}} \save [].[{}] *[F.:<3pt>]\frm{{}} \restore"#,
+                    "&".repeat(start),
+                    LINE_HEIGHT * lines,
+                    "r".repeat(end - start),
+                );
+                for i in start..middle {
+                    if i > start {
+                        print!(r#"  *+<{}em>{{}}"#, LINE_HEIGHT * lines);
+                    }
+                    print!(r#" \ar@{{-}}[{}] &"#, "u".repeat(verticals[i]));
+                }
+                print!(
+                    r#" *+<{}em>\txt{{{}}}"#,
+                    LINE_HEIGHT * lines,
+                    Self::txt(text)
+                );
+                for i in middle..=end {
+                    if i > middle {
+                        print!(r#"  *+<{}em>{{}}"#, LINE_HEIGHT * lines);
+                    }
+                    print!(r#" \ar@{{-}}[{}]"#, "u".repeat(verticals[i]));
+                    if i < end {
+                        print!(" &");
+                    } else {
+                        println!(r#" {} \\"#, "&".repeat(nodes.len() - end - 1));
+                    }
+                }
+            }
+            Ordering::Greater => {
+                panic!("unsupported note ordering on line {}", line);
+            }
+        }
+        start..=end
+    }
+
+    fn print_group(text: &str, lines: usize, nnodes: usize, verticals0: usize) {
+        if lines == 0 {
+            println!("% empty group: {}", text);
+        } else {
+            println!(
+                r#"    \save [].[{}] {{\txt{{{}}}}} \restore \ar@{{-}}[{}]"#,
+                "r".repeat(nnodes - 1),
+                Self::txt(text),
+                "u".repeat(verticals0),
+            );
+            println!(
+                r#"      \save [].[{}{}] *+[F-,]\frm{{}} \restore {} \\"#,
+                "d".repeat(lines),
+                "r".repeat(nnodes - 1),
+                "&".repeat(nnodes - 1),
+            );
+        }
+    }
+
+    #[allow(clippy::needless_range_loop)] // The loops are clearer.
     pub fn print(&self, nodes: &Nodes, verticals: &mut Vec<usize>) {
         for i in &mut verticals[..] {
             *i += 1;
         }
         match &self {
             Self::Arrow { from, to, text } => {
-                let start = nodes.index_of(from);
-                let end = nodes.index_of(to);
-                let (l, c, d) = if start > end {
-                    (start - end, "l", '_')
-                } else {
-                    (end - start, "r", '^')
-                };
-                println!(
-                    r#"    {} \ar[{}]{}{{\txt{{{}}}}} {} \\"#,
-                    "&".repeat(start),
-                    c.repeat(l),
-                    d,
-                    Self::txt(text),
-                    "&".repeat(nodes.len() - start - 1)
-                );
+                Self::print_arrow(nodes, from, to, text);
             }
             Self::Note {
                 from,
@@ -90,81 +182,13 @@ impl Item {
                 text,
                 line,
             } => {
-                const LINE_HEIGHT: f64 = 1.5;
-                let start = from.as_ref().map(|x| nodes.index_of(x)).unwrap_or(0);
-                let end = to
-                    .as_ref()
-                    .map(|x| nodes.index_of(x))
-                    .unwrap_or_else(|| nodes.len() - 1);
-                match start.cmp(&end) {
-                    Ordering::Equal => {
-                        println!(
-                            r#"    {} *+[F.:<3pt>]{{\txt{{{}}}}} \ar@{{-}}[{}] {} \\"#,
-                            "&".repeat(start),
-                            Self::txt(text),
-                            "u".repeat(verticals[start]),
-                            "&".repeat(nodes.len() - end),
-                        );
-                    }
-                    Ordering::Less => {
-                        let middle = (end - start) / 2;
-                        let lines = f64::from(
-                            u32::try_from(text.trim().matches('\n').count() + 1).unwrap(),
-                        );
-                        print!(
-                            r#"    {} *+<{}em>{{}} \save [].[{}] *[F.:<3pt>]\frm{{}} \restore"#,
-                            "&".repeat(start),
-                            LINE_HEIGHT * lines,
-                            "r".repeat(end - start),
-                        );
-                        for i in start..middle {
-                            if i > start {
-                                print!(r#"  *+<{}em>{{}}"#, LINE_HEIGHT * lines);
-                            }
-                            print!(r#" \ar@{{-}}[{}] &"#, "u".repeat(verticals[i]));
-                        }
-                        print!(
-                            r#" *+<{}em>\txt{{{}}}"#,
-                            LINE_HEIGHT * lines,
-                            Self::txt(text)
-                        );
-                        for i in middle..=end {
-                            if i > middle {
-                                print!(r#"  *+<{}em>{{}}"#, LINE_HEIGHT * lines);
-                            }
-                            print!(r#" \ar@{{-}}[{}]"#, "u".repeat(verticals[i]));
-                            if i < end {
-                                print!(" &");
-                            } else {
-                                println!(r#" {} \\"#, "&".repeat(nodes.len() - end - 1));
-                            }
-                        }
-                    }
-                    Ordering::Greater => {
-                        panic!("unsupported note ordering on line {}", line);
-                    }
-                }
-                for i in start..=end {
+                let range = Self::print_note(nodes, from, to, text, *line, verticals);
+                for i in range {
                     verticals[i] = 0;
                 }
             }
             Self::Group { text, lines } => {
-                if *lines == 0 {
-                    println!("% empty group: {}", text);
-                } else {
-                    println!(
-                        r#"    \save [].[{}] {{\txt{{{}}}}} \restore \ar@{{-}}[{}]"#,
-                        "r".repeat(nodes.len() - 1),
-                        Self::txt(text),
-                        "u".repeat(verticals[0]),
-                    );
-                    println!(
-                        r#"      \save [].[{}{}] *+[F-,]\frm{{}} \restore {} \\"#,
-                        "d".repeat(*lines),
-                        "r".repeat(nodes.len() - 1),
-                        "&".repeat(nodes.len() - 1),
-                    );
-                }
+                Self::print_group(text, *lines, nodes.len(), verticals[0]);
                 verticals[0] = 0;
             }
         }
@@ -318,9 +342,8 @@ fn main() {
             file = true;
             if let Some(label) = path
                 .file_stem()
-                .or(path.file_name())
-                .map(std::ffi::OsStr::to_str)
-                .flatten()
+                .or_else(|| path.file_name())
+                .and_then(std::ffi::OsStr::to_str)
             {
                 items.label(label);
             };
