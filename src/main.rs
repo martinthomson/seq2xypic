@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io;
+use std::path::PathBuf;
 
 #[derive(Default)]
 struct Nodes {
@@ -174,6 +175,7 @@ impl Item {
 struct Items {
     title: String,
     options: String,
+    label: Option<String>,
     nodes: Nodes,
     all: Vec<Item>,
 }
@@ -246,7 +248,14 @@ impl Items {
         );
         println!(r#"}} \]"#);
         println!(r#"\caption{{{}}}"#, Item::txt(&self.title));
+        if let Some(label) = &self.label {
+            println!(r#"\label{{fig:{}}}"#, Item::txt(label));
+        }
         println!(r#"\end{{figure}}"#);
+    }
+
+    pub fn label(&mut self, label: &str) {
+        self.label = Some(label.to_owned())
     }
 
     pub fn parse(&mut self, r: &mut impl io::BufRead) {
@@ -304,12 +313,21 @@ fn main() {
     let mut items = Items::default();
     let mut file = false;
     for arg in std::env::args().skip(1) {
-        if let Ok(f) = File::open(&arg) {
+        let path = PathBuf::from(&arg);
+        if let Ok(f) = File::open(&path) {
             file = true;
+            if let Some(label) = path
+                .file_stem()
+                .or(path.file_name())
+                .map(std::ffi::OsStr::to_str)
+                .flatten()
+            {
+                items.label(label);
+            };
             items.parse(&mut io::BufReader::new(f));
             items.print();
         } else {
-            panic!("invalid file: {}", arg);
+            panic!("cannot open file: {}", arg);
         }
     }
     if !file {
