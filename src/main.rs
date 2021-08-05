@@ -124,11 +124,7 @@ impl Item {
                     }
                     print!(r#" \ar@{{-}}[{}] &"#, "u".repeat(verticals[i]));
                 }
-                print!(
-                    r#" *+<{}em>\txt{{{}}}"#,
-                    LINE_HEIGHT * lines,
-                    Self::txt(text)
-                );
+                print!(r#" *+\txt{{{}}}"#, Self::txt(text));
                 for i in middle..=end {
                     if i > middle {
                         print!(r#"  *+<{}em>{{}}"#, LINE_HEIGHT * lines);
